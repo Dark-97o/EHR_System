@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decentralized EHR System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aptos/1.3.16/index.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f8fa;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #2c73d2;
+            margin-bottom: 10px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        button {
+            background-color: #2c73d2;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #1e5daa;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            border-bottom: 2px solid #2c73d2;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        #recordsList {
+            margin-top: 20px;
+        }
+        .record-item {
+            background-color: #f9f9f9;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #2c73d2;
+        }
+        .wallet-info {
+            background-color: #e9f2ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Decentralized EHR System</h1>
+            <p>Secure and transparent electronic health records on the Aptos blockchain</p>
+        </header>
+
+        <div class="wallet-info" id="walletInfo">
+            <p>Connect your wallet to continue...</p>
+            <button id="connectWalletBtn">Connect Wallet</button>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="create">Create Record</div>
+            <div class="tab" data-tab="update">Update Record</div>
+            <div class="tab" data-tab="view">View Records</div>
+        </div>
+
+        <div class="tab-content active" id="createTab">
+            <div class="section">
+                <h2>Create New Health Record</h2>
+                <form id="createRecordForm">
+                    <div class="form-group">
+                        <label for="patientAddress">Patient Address:</label>
+                        <input type="text" id="patientAddress" placeholder="Enter patient's Aptos address" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="healthData">Health Record Data:</label>
+                        <textarea id="healthData" placeholder="Enter health record data (will be encrypted)" required></textarea>
+                    </div>
+                    <button type="submit">Create Record</button>
+                </form>
+                <div id="createStatus"></div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="updateTab">
+            <div class="section">
+                <h2>Update Health Record</h2>
+                <form id="updateRecordForm">
+                    <div class="form-group">
+                        <label for="updatePatientAddress">Patient Address:</label>
+                        <input type="text" id="updatePatientAddress" placeholder="Enter patient's Aptos address" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="updateHealthData">New Health Record Data:</label>
+                        <textarea id="updateHealthData" placeholder="Enter updated health record data (will be encrypted)" required></textarea>
+                    </div>
+                    <button type="submit">Update Record</button>
+                </form>
+                <div id="updateStatus"></div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="viewTab">
+            <div class="section">
+                <h2>View Health Records</h2>
+                <p>Records you have access to will appear here.</p>
+                <button id="fetchRecordsBtn">Fetch Records</button>
+                <div id="recordsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let wallet = null;
+        let client = null;
+        const MODULE_ADDRESS = "HealthSystem"; // Replace with actual deployed address
+        const MODULE_NAME = "EHR";
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            setupTabs();
+            document.getElementById('connectWalletBtn').addEventListener('click', connectWallet);
+            document.getElementById('createRecordForm').addEventListener('submit', createRecord);
+            document.getElementById('updateRecordForm').addEventListener('submit', updateRecord);
+            document.getElementById('fetchRecordsBtn').addEventListener('click', fetchRecords);
+            
+            // Check if wallet is already connected
+            try {
+                await checkWalletConnection();
+            } catch (error) {
+                console.error("Wallet connection check failed:", error);
+            }
+        });
+
+        // Setup tab navigation
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    // Remove active class from all tabs
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    
+                    // Hide all tab contents
+                    document.querySelectorAll('.tab-content').forEach(content => {
+                        content.classList.remove('active');
+                    });
+                    
+                    // Show selected tab content
+                    const tabId = tab.getAttribute('data-tab');
+                    document.getElementById(`${tabId}Tab`).classList.add('active');
+                });
+            });
+        }
+
+        // Connect to Petra or other Aptos wallets
+        async function connectWallet() {
+            try {
+                // Check if Petra is installed
+                if (!window.aptos) {
+                    updateStatus('createStatus', 'error', 'Aptos wallet not found. Please install Petra or another Aptos wallet extension.');
+                    return;
+                }
+                
+                wallet = window.aptos;
+                const response = await wallet.connect();
+                const account = await wallet.account();
+                
+                client = new window.aptosSDK.AptosClient("https://fullnode.devnet.aptoslabs.com/v1");
+                
+                // Update UI to show connected status
+                document.getElementById('walletInfo').innerHTML = `
+                    <p><strong>Connected Address:</strong> ${account.address.substring(0, 6)}...${account.address.substring(account.address.length - 4)}</p>
+                    <p><strong>Network:</strong> Devnet</p>
+                    <button id="disconnectWalletBtn">Disconnect</button>
+                `;
+                
+                document.getElementById('disconnectWalletBtn').addEventListener('click', disconnectWallet);
+                
+                return account;
+            } catch (error) {
+                updateStatus('createStatus', 'error', `Failed to connect wallet: ${error.message}`);
+                console.error(error);
+                return null;
+            }
+        }
+
+        // Check if wallet is already connected
+        async function checkWalletConnection() {
+            if (window.aptos) {
+                try {
+                    wallet = window.aptos;
+                    const account = await wallet.account();
+                    if (account) {
+                        client = new window.aptosSDK.AptosClient("https://fullnode.devnet.aptoslabs.com/v1");
+                        
+                        // Update UI to show connected status
+                        document.getElementById('walletInfo').innerHTML = `
+                            <p><strong>Connected Address:</strong> ${account.address.substring(0, 6)}...${account.address.substring(account.address.length - 4)}</p>
+                            <p><strong>Network:</strong> Devnet</p>
+                            <button id="disconnectWalletBtn">Disconnect</button>
+                        `;
+                        
+                        document.getElementById('disconnectWalletBtn').addEventListener('click', disconnectWallet);
+                    }
+                } catch (error) {
+                    console.error("Error checking wallet connection:", error);
+                }
+            }
+        }
+
+        // Disconnect wallet
+        function disconnectWallet() {
+            if (wallet) {
+                wallet.disconnect();
+                wallet = null;
+                client = null;
+                
+                // Reset UI
+                document.getElementById('walletInfo').innerHTML = `
+                    <p>Connect your wallet to continue...</p>
+                    <button id="connectWalletBtn">Connect Wallet</button>
+                `;
+                
+                document.getElementById('connectWalletBtn').addEventListener('click', connectWallet);
+            }
+        }
+
+        // Create a new health record
+        async function createRecord(event) {
+            event.preventDefault();
+            
+            if (!wallet) {
+                updateStatus('createStatus', 'error', 'Please connect your wallet first.');
+                return;
+            }
+            
+            try {
+                const patientAddress = document.getElementById('patientAddress').value;
+                const healthData = document.getElementById('healthData').value;
+                
+                // Encrypt the health data (in a real app, you would use the patient's public key)
+                const encryptedData = CryptoJS.AES.encrypt(healthData, 'demo-encryption-key').toString();
+                
+                // Create the transaction payload
+                const payload = {
+                    type: "entry_function_payload",
+                    function: `${MODULE_ADDRESS}::${MODULE_NAME}::create_health_record`,
+                    type_arguments: [],
+                    arguments: [patientAddress, encryptedData]
+                };
+                
+                // Sign and submit the transaction
+                const transaction = await wallet.signAndSubmitTransaction(payload);
+                
+                // Wait for transaction to be confirmed
+                await client.waitForTransaction(transaction.hash);
+                
+                updateStatus('createStatus', 'success', `Health record created successfully! Transaction hash: ${transaction.hash}`);
+                document.getElementById('createRecordForm').reset();
+            } catch (error) {
+                updateStatus('createStatus', 'error', `Failed to create health record: ${error.message}`);
+                console.error(error);
+            }
+        }
+
+        // Update an existing health record
+        async function updateRecord(event) {
+            event.preventDefault();
+            
+            if (!wallet) {
+                updateStatus('updateStatus', 'error', 'Please connect your wallet first.');
+                return;
+            }
+            
+            try {
+                const patientAddress = document.getElementById('updatePatientAddress').value;
+                const healthData = document.getElementById('updateHealthData').value;
+                
+                // Encrypt the health data
+                const encryptedData = CryptoJS.AES.encrypt(healthData, 'demo-encryption-key').toString();
+                
+                // Create the transaction payload
+                const payload = {
+                    type: "entry_function_payload",
+                    function: `${MODULE_ADDRESS}::${MODULE_NAME}::update_health_record`,
+                    type_arguments: [],
+                    arguments: [patientAddress, encryptedData]
+                };
+                
+                // Sign and submit the transaction
+                const transaction = await wallet.signAndSubmitTransaction(payload);
+                
+                // Wait for transaction to be confirmed
+                await client.waitForTransaction(transaction.hash);
+                
+                updateStatus('updateStatus', 'success', `Health record updated successfully! Transaction hash: ${transaction.hash}`);
+                document.getElementById('updateRecordForm').reset();
+            } catch (error) {
+                updateStatus('updateStatus', 'error', `Failed to update health record: ${error.message}`);
+                console.error(error);
+            }
+        }
+
+        // Fetch health records the user has access to
+        async function fetchRecords() {
+            if (!wallet) {
+                updateStatus('viewStatus', 'error', 'Please connect your wallet first.');
+                return;
+            }
+            
+            const recordsList = document.getElementById('recordsList');
+            recordsList.innerHTML = '<p>Loading records...</p>';
+            
+            try {
+                const account = await wallet.account();
+                
+                // In a real implementation, you would query the blockchain for records
+                // For this demo, we'll just show some sample data
+                setTimeout(() => {
+                    recordsList.innerHTML = `
+                        <div class="record-item">
+                            <h3>Patient: 0x1a2b...3c4d</h3>
+                            <p><strong>Last Updated:</strong> ${new Date().toLocaleString()}</p>
+                            <p><strong>Doctor:</strong> ${account.address.substring(0, 6)}...${account.address.substring(account.address.length - 4)}</p>
+                            <p><strong>Data (Decrypted):</strong> Patient has a history of hypertension. Blood pressure: 135/85. Medication: Lisinopril 10mg daily.</p>
+                        </div>
+                        <div class="record-item">
+                            <h3>Patient: 0x5e6f...7g8h</h3>
+                            <p><strong>Last Updated:</strong> ${new Date(Date.now() - 86400000).toLocaleString()}</p>
+                            <p><strong>Doctor:</strong> ${account.address.substring(0, 6)}...${account.address.substring(account.address.length - 4)}</p>
+                            <p><strong>Data (Decrypted):</strong> Annual checkup results: All vitals normal. Cholesterol: 185 mg/dL. Recommended follow-up in 12 months.</p>
+                        </div>
+                    `;
+                }, 1500);
+            } catch (error) {
+                recordsList.innerHTML = `<p class="error">Error fetching records: ${error.message}</p>`;
+                console.error(error);
+            }
+        }
+
+        // Helper function to update status messages
+        function updateStatus(elementId, type, message) {
+            const statusElement = document.getElementById(elementId);
+            statusElement.className = `status ${type}`;
+            statusElement.innerHTML = message;
+            
+            // Scroll to the status message
+            statusElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    </script>
+</body>
+</html>
